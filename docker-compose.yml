@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # === EVREN 1: MONOLITH DATABASE ===
+  monolith-db:
+    image: postgres:16-alpine
+    container_name: monolith-db
+    environment:
+      POSTGRES_USER: tez_user
+      POSTGRES_PASSWORD: tez_password
+      POSTGRES_DB: monolith_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - monolith_db_data:/var/lib/postgresql/data
+    networks:
+      - tez-network
+
+  # === EVREN 2: MIKROSERVIS DATABASES ===
+  stock-db:
+    image: postgres:16-alpine
+    container_name: stock-db
+    environment:
+      POSTGRES_USER: tez_user
+      POSTGRES_PASSWORD: tez_password
+      POSTGRES_DB: stock_db
+    ports:
+      - "5434:5432" # Bilgisayardan 5434 ile, Docker içinden 5432 ile erişilecek
+    volumes:
+      - stock_db_data:/var/lib/postgresql/data
+    networks:
+      - tez-network
+
+  order-db:
+    image: postgres:16-alpine
+    container_name: order-db
+    environment:
+      POSTGRES_USER: tez_user
+      POSTGRES_PASSWORD: tez_password
+      POSTGRES_DB: order_db
+    ports:
+      - "5433:5432" # Bilgisayardan 5433 ile, Docker içinden 5432 ile erişilecek
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+    networks:
+      - tez-network
+
+  # === APPLICATION CONTAINERS ===
+  monolith-app:
+    build:
+      context: ../monolith-app
+      dockerfile: Dockerfile
+    container_name: monolith-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://monolith-db:5432/monolith_db
+    depends_on:
+      - monolith-db
+    networks:
+      - tez-network
+
+  stock-service:
+    build:
+      context: ../stock-app
+      dockerfile: Dockerfile
+    container_name: stock-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://stock-db:5432/stock_db
+    depends_on:
+      - stock-db
+    networks:
+      - tez-network
+
+  order-service:
+    build:
+      context: ../order-app
+      dockerfile: Dockerfile
+    container_name: order-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://order-db:5432/order_db
+      # İşte Localhost paradoksunu çözen sihirli satır:
+      - STOCK_SERVICE_URL=http://stock-service:8081/api/products
+    depends_on:
+      - order-db
+      - stock-service
+    networks:
+      - tez-network
+
+# Verilerin container kapandığında silinmemesi için disk alanları (Volumes)
+volumes:
+  monolith_db_data:
+  stock_db_data:
+  order_db_data:
+
+# Tüm sistemin birbiriyle konuşacağı ortak sanal ağ
+networks:
+  tez-network:
+    driver: bridge
